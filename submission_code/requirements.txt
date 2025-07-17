@@ -1,0 +1,6 @@
+biosppy==2.2.3
+keras==3.10.0
+numpy==2.3.1
+scipy==1.16.0
+tensorflow==2.19.0
+wfdb==4.3.0
