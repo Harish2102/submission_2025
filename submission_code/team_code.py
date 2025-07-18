@@ -12,7 +12,6 @@
 import joblib
 import numpy as np
 import os
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 import sys
 
 from helper_code import *
@@ -36,7 +35,7 @@ def train_model(data_folder, model_folder, verbose):
 
 # Load your trained models. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function. If you do not train one of the models, then you can return None for the model.
-def load_model(model_file, verbose):
+def load_model(model_folder, verbose):
     model = ecg_model()
     threshold_var = tf.Variable(0.5, dtype=tf.float32, trainable=False, name="dyn_thresh")
 
@@ -49,26 +48,27 @@ def load_model(model_file, verbose):
                 TopKTPR(k_fraction=0.05)]
     )
 
-    weight_pt = model_file
+    pattern = os.path.join(model_folder, '*.keras')
+    matches = glob.glob(pattern)
+    if not matches:
+        raise FileNotFoundError(f"No model files found in {model_folder} with pattern {pattern}")
+    if verbose:
+        print(f"Loading model from {matches[0]}")
+    weight_pt = matches[0]
     model.load_weights(weight_pt)
     return model
 
-
-# Run your trained model. This function is *required*. You should edit this function to add your code, but do *not* change the
-# arguments of this function.
-THRESHOLD = 0.2143  # dynamic threshold from validation tuning
-
 def run_model(record, model, verbose):
-
     record_data = wfdb.rdrecord(record, physical=True)
     fs = record_data.fs
     signal = record_data.p_signal.astype(np.float32)
     x = data_preprocess(signal, fs)
     x = np.expand_dims(x, axis=0)
+    THRESHOLD = 0.2143  # This is the threshold used in the original model
 
     prob = float(model.predict(x, verbose=0)[0])
     binary = int(prob > THRESHOLD)
-
+    
     if verbose:
         print(f"Binary Output: {binary}, Probability Output: {prob} (Threshold = {THRESHOLD})")
 
