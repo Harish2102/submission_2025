@@ -19,6 +19,7 @@ from model_utils_2d_BiLSTM import *
 from _preprocess_utils_2d import *
 import tensorflow as tf
 import os
+from pathlib import Path
 
 ################################################################################
 #
@@ -35,28 +36,50 @@ def train_model(data_folder, model_folder, verbose):
 
 # Load your trained models. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function. If you do not train one of the models, then you can return None for the model.
-def load_model(model_folder, verbose):
-    model = ecg_model()
-    threshold_var = tf.Variable(0.5, dtype=tf.float32, trainable=False, name="dyn_thresh")
+MODEL_FILENAME = "trained_model.keras"
 
-    model.compile(
-        optimizer='adam',
-        loss=focal_loss(gamma=2.0),  # Use focal loss
-        metrics=['accuracy',
-                tf.keras.metrics.AUC(name="auc"),
-                f1_metric(threshold_var),
-                TopKTPR(k_fraction=0.05)]
-    )
+def load_model(model_folder, verbose=False):
+    # 1) Candidates to look in
+    candidates = [
+        Path(model_folder),                               # what run_model.py passed
+        Path(__file__).resolve().parent / "model",        # repo_root/model
+        Path("/model"),                                   # PhysioNet default mount
+    ]
 
-    pattern = os.path.join(model_folder, '*.keras')
-    matches = glob.glob(pattern)
-    if not matches:
-        raise FileNotFoundError(f"No model files found in {model_folder} with pattern {pattern}")
+    # 2) Pick the first directory that actually has the file
+    model_path = None
+    for d in candidates:
+        p = d / MODEL_FILENAME
+        if p.exists():
+            model_path = p
+            break
+
+    if model_path is None:
+        if verbose:
+            print("Checked dirs:", [str(d) for d in candidates])
+        raise FileNotFoundError(f"{MODEL_FILENAME} not found in any candidate directory.")
+
     if verbose:
-        print(f"Loading model from {matches[0]}")
-    weight_pt = matches[0]
-    model.load_weights(weight_pt)
-    return model
+        print("Loading model from:", model_path)
+
+    # 3) Try loading as a full Keras model first
+    try:
+        model = tf.keras.models.load_model(model_path, compile=False)
+        return model
+    except Exception:
+        # Fallback: you only saved weights; rebuild the architecture and load them
+        model = ecg_model()
+        threshold_var = tf.Variable(0.5, dtype=tf.float32, trainable=False, name="dyn_thresh")
+        model.compile(
+            optimizer="adam",
+            loss=focal_loss(gamma=2.0),
+            metrics=["accuracy",
+                     tf.keras.metrics.AUC(name="auc"),
+                     f1_metric(threshold_var),
+                     TopKTPR(k_fraction=0.05)]
+        )
+        model.load_weights(str(model_path))
+        return model
 
 def run_model(record, model, verbose):
     record_data = wfdb.rdrecord(record, physical=True)
